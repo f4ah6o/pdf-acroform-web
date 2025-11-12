@@ -123,59 +123,59 @@ async function extractFormFields(form) {
 
 // Get field type
 function getFieldType(field) {
-    const constructor = field.constructor.name;
+    // In production builds, constructor names are minified (e.g., "t")
+    // So we need to detect type by checking available methods
 
-    // Debug: log the constructor name and available methods
-    console.log(`Field: ${field.getName()}, Constructor: ${constructor}`);
-    console.log('Available methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(field)));
-
-    // Try different detection methods
-    try {
-        if (field.acroField) {
-            const fieldType = field.acroField.get('FT')?.toString();
-            console.log('FT value:', fieldType);
-        }
-    } catch (e) {
-        console.log('Cannot access acroField:', e.message);
+    // Check for checkbox (has check/uncheck methods)
+    if (typeof field.check === 'function' && typeof field.uncheck === 'function') {
+        return 'checkbox';
     }
 
-    // Check using instanceof-like approach
-    if (constructor === 'PDFTextField') return 'text';
-    if (constructor === 'PDFCheckBox') return 'checkbox';
-    if (constructor === 'PDFRadioGroup') return 'radio';
-    if (constructor === 'PDFDropdown') return 'dropdown';
-    if (constructor === 'PDFOptionList') return 'select';
-    if (constructor === 'PDFButton') return 'button';
+    // Check for radio group (has getOptions and usually fewer methods than dropdown)
+    if (typeof field.getOptions === 'function') {
+        const options = field.getOptions();
+        // Check if it's a radio group by checking if field has select method
+        // Dropdowns and lists also have getOptions, but we'll distinguish them later
+        // For now, check if it's editable (dropdown) or multiselect (list)
+        if (typeof field.isEditable === 'function') {
+            // It's a dropdown or list
+            if (typeof field.isMultiselect === 'function' && field.isMultiselect()) {
+                return 'select'; // Multi-select list
+            }
+            return 'dropdown'; // Regular dropdown
+        }
+        // If no isEditable method, it might be a radio group
+        return 'radio';
+    }
 
-    // Fallback to includes check
-    if (constructor.includes('Text')) return 'text';
-    if (constructor.includes('CheckBox')) return 'checkbox';
-    if (constructor.includes('RadioGroup')) return 'radio';
-    if (constructor.includes('Dropdown')) return 'dropdown';
-    if (constructor.includes('OptionList')) return 'select';
-    if (constructor.includes('Button')) return 'button';
+    // Check for text field (has setText method)
+    if (typeof field.setText === 'function' && typeof field.getText === 'function') {
+        return 'text';
+    }
 
-    console.warn(`Unknown field type: ${constructor}`);
+    // Check for button (has appearance update methods but not much else)
+    if (typeof field.updateAppearances === 'function' &&
+        !field.setText && !field.check && !field.getOptions) {
+        return 'button';
+    }
+
+    console.warn(`Unknown field type for: ${field.getName()}`);
     return 'text'; // default
 }
 
 // Get current field value
 function getFieldValue(field) {
     try {
-        const constructor = field.constructor.name;
-
-        if (constructor.includes('Text')) {
+        // Check by methods, not constructor name (which is minified in production)
+        if (typeof field.getText === 'function') {
             return field.getText() || '';
         }
-        if (constructor.includes('CheckBox')) {
+        if (typeof field.isChecked === 'function') {
             return field.isChecked();
         }
-        if (constructor.includes('Dropdown')) {
+        if (typeof field.getSelected === 'function') {
             const selected = field.getSelected();
-            return selected ? selected[0] : '';
-        }
-        if (constructor.includes('RadioGroup')) {
-            return field.getSelected() || '';
+            return Array.isArray(selected) ? selected[0] : selected || '';
         }
     } catch (error) {
         console.warn(`フィールド ${field.getName()} の値取得エラー:`, error);
@@ -187,8 +187,6 @@ function getFieldValue(field) {
 // Render dynamic form
 function renderForm() {
     dynamicForm.innerHTML = '';
-
-    console.log('Rendering form with fields:', formFields.map(f => ({ name: f.name, type: f.type })));
 
     formFields.forEach((fieldData, index) => {
         const formGroup = createFormGroup(fieldData, index);
@@ -359,24 +357,20 @@ async function handleDownload() {
 
             try {
                 const field = fieldData.field;
-                const constructor = field.constructor.name;
 
-                if (constructor.includes('Text')) {
+                // Check by methods, not constructor name
+                if (typeof field.setText === 'function') {
                     field.setText(input.value);
                     processedFields.add(fieldIndex);
-                } else if (constructor.includes('CheckBox')) {
+                } else if (typeof field.check === 'function' && typeof field.uncheck === 'function') {
                     if (input.checked) {
                         field.check();
                     } else {
                         field.uncheck();
                     }
                     processedFields.add(fieldIndex);
-                } else if (constructor.includes('Dropdown')) {
-                    if (input.value) {
-                        field.select(input.value);
-                    }
-                    processedFields.add(fieldIndex);
-                } else if (constructor.includes('RadioGroup')) {
+                } else if (typeof field.select === 'function') {
+                    // Dropdown, list, or radio group
                     if (input.value) {
                         field.select(input.value);
                     }
