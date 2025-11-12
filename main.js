@@ -125,6 +125,9 @@ async function extractFormFields(form) {
 function getFieldType(field) {
     const constructor = field.constructor.name;
 
+    // Debug: log the constructor name
+    console.log(`Field: ${field.getName()}, Constructor: ${constructor}`);
+
     if (constructor.includes('Text')) return 'text';
     if (constructor.includes('CheckBox')) return 'checkbox';
     if (constructor.includes('RadioGroup')) return 'radio';
@@ -132,6 +135,7 @@ function getFieldType(field) {
     if (constructor.includes('OptionList')) return 'select';
     if (constructor.includes('Button')) return 'button';
 
+    console.warn(`Unknown field type: ${constructor}`);
     return 'text'; // default
 }
 
@@ -163,6 +167,8 @@ function getFieldValue(field) {
 // Render dynamic form
 function renderForm() {
     dynamicForm.innerHTML = '';
+
+    console.log('Rendering form with fields:', formFields.map(f => ({ name: f.name, type: f.type })));
 
     formFields.forEach((fieldData, index) => {
         const formGroup = createFormGroup(fieldData, index);
