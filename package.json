@@ -1,0 +1,20 @@
+{
+  "name": "pdf-acroform-web",
+  "version": "1.0.0",
+  "description": "SPA to read PDF AcroForms, create web forms, and generate filled PDFs",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": ["pdf", "acroform", "form", "spa"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}

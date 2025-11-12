@@ -1,0 +1,346 @@
+import { PDFDocument } from 'pdf-lib';
+
+// Global state
+let pdfDoc = null;
+let pdfBytes = null;
+let formFields = [];
+
+// DOM elements
+const pdfInput = document.getElementById('pdfInput');
+const uploadArea = document.getElementById('uploadArea');
+const fileInfo = document.getElementById('fileInfo');
+const formSection = document.getElementById('formSection');
+const dynamicForm = document.getElementById('dynamicForm');
+const downloadBtn = document.getElementById('downloadBtn');
+
+// Initialize
+init();
+
+function init() {
+    // File input handler
+    pdfInput.addEventListener('change', handleFileSelect);
+
+    // Drag and drop handlers
+    uploadArea.addEventListener('dragover', handleDragOver);
+    uploadArea.addEventListener('dragleave', handleDragLeave);
+    uploadArea.addEventListener('drop', handleDrop);
+
+    // Download button handler
+    downloadBtn.addEventListener('click', handleDownload);
+}
+
+// File handling
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (file && file.type === 'application/pdf') {
+        loadPDF(file);
+    }
+}
+
+function handleDragOver(event) {
+    event.preventDefault();
+    uploadArea.classList.add('dragover');
+}
+
+function handleDragLeave(event) {
+    event.preventDefault();
+    uploadArea.classList.remove('dragover');
+}
+
+function handleDrop(event) {
+    event.preventDefault();
+    uploadArea.classList.remove('dragover');
+
+    const file = event.dataTransfer.files[0];
+    if (file && file.type === 'application/pdf') {
+        loadPDF(file);
+    }
+}
+
+// PDF loading and processing
+async function loadPDF(file) {
+    try {
+        // Show loading state
+        fileInfo.textContent = '読み込み中...';
+        fileInfo.classList.remove('hidden');
+
+        // Read file
+        const arrayBuffer = await file.arrayBuffer();
+        pdfBytes = new Uint8Array(arrayBuffer);
+
+        // Load PDF document
+        pdfDoc = await PDFDocument.load(pdfBytes);
+
+        // Get form
+        const form = pdfDoc.getForm();
+        const fields = form.getFields();
+
+        if (fields.length === 0) {
+            fileInfo.textContent = '⚠️ このPDFにはフォームフィールドがありません';
+            fileInfo.style.background = '#fef3c7';
+            fileInfo.style.borderColor = '#f59e0b';
+            fileInfo.style.color = '#92400e';
+            formSection.classList.add('hidden');
+            return;
+        }
+
+        // Update UI
+        fileInfo.textContent = `✓ ${file.name} を読み込みました（${fields.length}個のフィールド）`;
+        fileInfo.style.background = '#ecfdf5';
+        fileInfo.style.borderColor = '#10b981';
+        fileInfo.style.color = '#047857';
+
+        // Extract and display form fields
+        await extractFormFields(form);
+
+    } catch (error) {
+        console.error('PDF読み込みエラー:', error);
+        fileInfo.textContent = `❌ エラー: ${error.message}`;
+        fileInfo.style.background = '#fee2e2';
+        fileInfo.style.borderColor = '#ef4444';
+        fileInfo.style.color = '#991b1b';
+    }
+}
+
+// Extract form fields
+async function extractFormFields(form) {
+    formFields = [];
+    const fields = form.getFields();
+
+    for (const field of fields) {
+        const fieldData = {
+            name: field.getName(),
+            type: getFieldType(field),
+            value: getFieldValue(field),
+            field: field
+        };
+
+        formFields.push(fieldData);
+    }
+
+    renderForm();
+}
+
+// Get field type
+function getFieldType(field) {
+    const constructor = field.constructor.name;
+
+    if (constructor.includes('Text')) return 'text';
+    if (constructor.includes('CheckBox')) return 'checkbox';
+    if (constructor.includes('RadioGroup')) return 'radio';
+    if (constructor.includes('Dropdown')) return 'dropdown';
+    if (constructor.includes('OptionList')) return 'select';
+    if (constructor.includes('Button')) return 'button';
+
+    return 'text'; // default
+}
+
+// Get current field value
+function getFieldValue(field) {
+    try {
+        const constructor = field.constructor.name;
+
+        if (constructor.includes('Text')) {
+            return field.getText() || '';
+        }
+        if (constructor.includes('CheckBox')) {
+            return field.isChecked();
+        }
+        if (constructor.includes('Dropdown')) {
+            const selected = field.getSelected();
+            return selected ? selected[0] : '';
+        }
+        if (constructor.includes('RadioGroup')) {
+            return field.getSelected() || '';
+        }
+    } catch (error) {
+        console.warn(`フィールド ${field.getName()} の値取得エラー:`, error);
+    }
+
+    return '';
+}
+
+// Render dynamic form
+function renderForm() {
+    dynamicForm.innerHTML = '';
+
+    formFields.forEach((fieldData, index) => {
+        const formGroup = createFormGroup(fieldData, index);
+        if (formGroup) {
+            dynamicForm.appendChild(formGroup);
+        }
+    });
+
+    formSection.classList.remove('hidden');
+}
+
+// Create form group for each field
+function createFormGroup(fieldData, index) {
+    const { name, type, value } = fieldData;
+
+    const formGroup = document.createElement('div');
+    formGroup.className = 'form-group';
+
+    if (type === 'checkbox') {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'checkbox-wrapper';
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.id = `field-${index}`;
+        input.checked = value;
+        input.dataset.fieldIndex = index;
+
+        const label = document.createElement('label');
+        label.htmlFor = `field-${index}`;
+        label.textContent = name;
+
+        wrapper.appendChild(input);
+        wrapper.appendChild(label);
+        formGroup.appendChild(wrapper);
+
+    } else if (type === 'dropdown' || type === 'select') {
+        const label = document.createElement('label');
+        label.htmlFor = `field-${index}`;
+        label.textContent = name;
+
+        const select = document.createElement('select');
+        select.id = `field-${index}`;
+        select.dataset.fieldIndex = index;
+
+        // Try to get options
+        try {
+            const options = fieldData.field.getOptions();
+
+            // Add empty option
+            const emptyOption = document.createElement('option');
+            emptyOption.value = '';
+            emptyOption.textContent = '選択してください';
+            select.appendChild(emptyOption);
+
+            options.forEach(option => {
+                const optionElement = document.createElement('option');
+                optionElement.value = option;
+                optionElement.textContent = option;
+                if (option === value) {
+                    optionElement.selected = true;
+                }
+                select.appendChild(optionElement);
+            });
+        } catch (error) {
+            console.warn('オプション取得エラー:', error);
+        }
+
+        formGroup.appendChild(label);
+        formGroup.appendChild(select);
+
+    } else {
+        // Default to text input
+        const label = document.createElement('label');
+        label.htmlFor = `field-${index}`;
+        label.textContent = name;
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.id = `field-${index}`;
+        input.value = value || '';
+        input.dataset.fieldIndex = index;
+        input.placeholder = `${name}を入力`;
+
+        formGroup.appendChild(label);
+        formGroup.appendChild(input);
+    }
+
+    return formGroup;
+}
+
+// Handle download
+async function handleDownload() {
+    if (!pdfDoc) {
+        alert('PDFが読み込まれていません');
+        return;
+    }
+
+    try {
+        downloadBtn.disabled = true;
+        downloadBtn.textContent = '処理中...';
+
+        // Get form
+        const form = pdfDoc.getForm();
+
+        // Update form fields with user input
+        const inputs = dynamicForm.querySelectorAll('input, select, textarea');
+
+        inputs.forEach(input => {
+            const fieldIndex = parseInt(input.dataset.fieldIndex);
+            const fieldData = formFields[fieldIndex];
+
+            if (!fieldData) return;
+
+            try {
+                const field = fieldData.field;
+                const constructor = field.constructor.name;
+
+                if (constructor.includes('Text')) {
+                    field.setText(input.value);
+                } else if (constructor.includes('CheckBox')) {
+                    if (input.checked) {
+                        field.check();
+                    } else {
+                        field.uncheck();
+                    }
+                } else if (constructor.includes('Dropdown')) {
+                    if (input.value) {
+                        field.select(input.value);
+                    }
+                } else if (constructor.includes('RadioGroup')) {
+                    if (input.value) {
+                        field.select(input.value);
+                    }
+                }
+            } catch (error) {
+                console.error(`フィールド ${fieldData.name} の更新エラー:`, error);
+            }
+        });
+
+        // Flatten form (optional - makes fields non-editable)
+        // form.flatten();
+
+        // Save PDF
+        const pdfBytesOutput = await pdfDoc.save();
+
+        // Download
+        const blob = new Blob([pdfBytesOutput], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `filled-form-${Date.now()}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        // Reset button
+        downloadBtn.disabled = false;
+        downloadBtn.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            PDFをダウンロード
+        `;
+
+    } catch (error) {
+        console.error('PDF生成エラー:', error);
+        alert(`エラーが発生しました: ${error.message}`);
+
+        downloadBtn.disabled = false;
+        downloadBtn.innerHTML = `
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            PDFをダウンロード
+        `;
+    }
+}
