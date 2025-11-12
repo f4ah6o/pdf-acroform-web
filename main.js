@@ -125,6 +125,29 @@ async function extractFormFields(form) {
 function getFieldType(field) {
     const constructor = field.constructor.name;
 
+    // Debug: log the constructor name and available methods
+    console.log(`Field: ${field.getName()}, Constructor: ${constructor}`);
+    console.log('Available methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(field)));
+
+    // Try different detection methods
+    try {
+        if (field.acroField) {
+            const fieldType = field.acroField.get('FT')?.toString();
+            console.log('FT value:', fieldType);
+        }
+    } catch (e) {
+        console.log('Cannot access acroField:', e.message);
+    }
+
+    // Check using instanceof-like approach
+    if (constructor === 'PDFTextField') return 'text';
+    if (constructor === 'PDFCheckBox') return 'checkbox';
+    if (constructor === 'PDFRadioGroup') return 'radio';
+    if (constructor === 'PDFDropdown') return 'dropdown';
+    if (constructor === 'PDFOptionList') return 'select';
+    if (constructor === 'PDFButton') return 'button';
+
+    // Fallback to includes check
     if (constructor.includes('Text')) return 'text';
     if (constructor.includes('CheckBox')) return 'checkbox';
     if (constructor.includes('RadioGroup')) return 'radio';
@@ -132,6 +155,7 @@ function getFieldType(field) {
     if (constructor.includes('OptionList')) return 'select';
     if (constructor.includes('Button')) return 'button';
 
+    console.warn(`Unknown field type: ${constructor}`);
     return 'text'; // default
 }
 
@@ -163,6 +187,8 @@ function getFieldValue(field) {
 // Render dynamic form
 function renderForm() {
     dynamicForm.innerHTML = '';
+
+    console.log('Rendering form with fields:', formFields.map(f => ({ name: f.name, type: f.type })));
 
     formFields.forEach((fieldData, index) => {
         const formGroup = createFormGroup(fieldData, index);
