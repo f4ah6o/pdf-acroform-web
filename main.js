@@ -1,9 +1,11 @@
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts, PDFName, PDFString } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 
 // Global state
 let pdfDoc = null;
 let pdfBytes = null;
 let formFields = [];
+let japaneseFont = null;
 
 // DOM elements
 const pdfInput = document.getElementById('pdfInput');
@@ -70,6 +72,20 @@ async function loadPDF(file) {
 
         // Load PDF document
         pdfDoc = await PDFDocument.load(pdfBytes);
+
+        // Register fontkit for custom fonts
+        pdfDoc.registerFontkit(fontkit);
+
+        // Load and embed Japanese font
+        try {
+            const fontUrl = 'https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-jp@5.0.0/files/noto-sans-jp-japanese-400-normal.woff';
+            const fontBytes = await fetch(fontUrl).then(res => res.arrayBuffer());
+            japaneseFont = await pdfDoc.embedFont(fontBytes, { subset: true });
+        } catch (fontError) {
+            console.warn('日本語フォントの読み込みに失敗しました:', fontError);
+            // Fallback to Helvetica if Japanese font fails
+            japaneseFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        }
 
         // Get form
         const form = pdfDoc.getForm();
@@ -381,11 +397,49 @@ async function handleDownload() {
             }
         });
 
+        // Update field appearances with Japanese font support
+        try {
+            // For text fields, update default appearance to use embedded Japanese font
+            const form = pdfDoc.getForm();
+            const textFields = formFields.filter(f => f.type === 'text');
+
+            for (const fieldData of textFields) {
+                const field = fieldData.field;
+                if (typeof field.acroField !== 'undefined' && japaneseFont) {
+                    try {
+                        // Access the low-level PDF dictionary
+                        const fieldDict = field.acroField.dict;
+                        const fontName = japaneseFont.name;
+
+                        // Update the default appearance (DA) to use the embedded font
+                        const da = `/${fontName} 12 Tf 0 g`;
+                        fieldDict.set(PDFName.of('DA'), PDFString.of(da));
+
+                        // Also ensure the font is added to form's default resources
+                        const acroForm = form.acroForm;
+                        const defaultResources = acroForm.getDefaultResources();
+                        if (defaultResources) {
+                            const fontDict = defaultResources.lookup(PDFName.of('Font'));
+                            if (fontDict) {
+                                fontDict.set(PDFName.of(fontName), japaneseFont.ref);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn(`フィールド ${fieldData.name} のフォント設定に失敗:`, e);
+                    }
+                }
+            }
+        } catch (fontError) {
+            console.warn('フォント設定エラー:', fontError);
+        }
+
         // Flatten form (optional - makes fields non-editable)
         // form.flatten();
 
-        // Save PDF
-        const pdfBytesOutput = await pdfDoc.save();
+        // Save PDF with options to preserve Japanese characters
+        const pdfBytesOutput = await pdfDoc.save({
+            useObjectStreams: false,
+        });
 
         // Download
         const blob = new Blob([pdfBytesOutput], { type: 'application/pdf' });
