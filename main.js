@@ -178,6 +178,11 @@ function renderForm() {
 function createFormGroup(fieldData, index) {
     const { name, type, value } = fieldData;
 
+    // Skip button fields
+    if (type === 'button') {
+        return null;
+    }
+
     const formGroup = document.createElement('div');
     formGroup.className = 'form-group';
 
@@ -198,6 +203,44 @@ function createFormGroup(fieldData, index) {
         wrapper.appendChild(input);
         wrapper.appendChild(label);
         formGroup.appendChild(wrapper);
+
+    } else if (type === 'radio') {
+        const label = document.createElement('label');
+        label.textContent = name;
+        formGroup.appendChild(label);
+
+        const radioWrapper = document.createElement('div');
+        radioWrapper.className = 'radio-wrapper';
+
+        // Try to get options for radio group
+        try {
+            const options = fieldData.field.getOptions();
+
+            options.forEach((option, optionIndex) => {
+                const radioContainer = document.createElement('div');
+                radioContainer.className = 'radio-item';
+
+                const input = document.createElement('input');
+                input.type = 'radio';
+                input.id = `field-${index}-${optionIndex}`;
+                input.name = `field-${index}`;
+                input.value = option;
+                input.dataset.fieldIndex = index;
+                input.checked = option === value;
+
+                const optionLabel = document.createElement('label');
+                optionLabel.htmlFor = `field-${index}-${optionIndex}`;
+                optionLabel.textContent = option;
+
+                radioContainer.appendChild(input);
+                radioContainer.appendChild(optionLabel);
+                radioWrapper.appendChild(radioContainer);
+            });
+        } catch (error) {
+            console.warn('ラジオグループオプション取得エラー:', error);
+        }
+
+        formGroup.appendChild(radioWrapper);
 
     } else if (type === 'dropdown' || type === 'select') {
         const label = document.createElement('label');
@@ -270,6 +313,7 @@ async function handleDownload() {
 
         // Update form fields with user input
         const inputs = dynamicForm.querySelectorAll('input, select, textarea');
+        const processedFields = new Set();
 
         inputs.forEach(input => {
             const fieldIndex = parseInt(input.dataset.fieldIndex);
@@ -277,26 +321,40 @@ async function handleDownload() {
 
             if (!fieldData) return;
 
+            // For radio buttons, only process the checked one
+            if (input.type === 'radio' && !input.checked) {
+                return;
+            }
+
+            // Avoid processing the same field multiple times
+            if (processedFields.has(fieldIndex)) {
+                return;
+            }
+
             try {
                 const field = fieldData.field;
                 const constructor = field.constructor.name;
 
                 if (constructor.includes('Text')) {
                     field.setText(input.value);
+                    processedFields.add(fieldIndex);
                 } else if (constructor.includes('CheckBox')) {
                     if (input.checked) {
                         field.check();
                     } else {
                         field.uncheck();
                     }
+                    processedFields.add(fieldIndex);
                 } else if (constructor.includes('Dropdown')) {
                     if (input.value) {
                         field.select(input.value);
                     }
+                    processedFields.add(fieldIndex);
                 } else if (constructor.includes('RadioGroup')) {
                     if (input.value) {
                         field.select(input.value);
                     }
+                    processedFields.add(fieldIndex);
                 }
             } catch (error) {
                 console.error(`フィールド ${fieldData.name} の更新エラー:`, error);
